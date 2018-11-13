@@ -79,6 +79,11 @@ def combined_roidb(imdb_names):
 if __name__ == '__main__':
     args = parse_args()
 
+    #args.cfg_file='experiments/cfgs/faster_rcnn_end2end.yml'
+    #args.imdb=''
+    #args.iters='100'
+    #args.weights='data/faster_rcnn_models/VGG16_faster_rcnn_final.caffemodel'
+
     print('Called with args:')
     print(args)
 

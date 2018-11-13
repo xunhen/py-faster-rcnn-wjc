@@ -18,6 +18,7 @@ from fast_rcnn.nms_wrapper import nms
 import cPickle
 from utils.blob import im_list_to_blob
 import os
+import time
 
 def _get_image_blob(im):
     """Converts an image into a network input.
@@ -120,6 +121,10 @@ def im_detect(net, im, boxes=None):
     """
     blobs, im_scales = _get_blobs(im, boxes)
 
+    #wjc
+    if cfg.BEGIN:
+        cfg.background.processAndgenerate(im_scales[0])
+
     # When mapping from image ROIs to feature map ROIs, there's some aliasing
     # (some distinct image ROIs get mapped to the same feature ROI).
     # Here, we identify duplicate feature ROIs, so we only compute features
@@ -151,7 +156,16 @@ def im_detect(net, im, boxes=None):
         forward_kwargs['im_info'] = blobs['im_info'].astype(np.float32, copy=False)
     else:
         forward_kwargs['rois'] = blobs['rois'].astype(np.float32, copy=False)
+
+    # timers
+    _t = {'im_detect': Timer(), 'misc': Timer()}
+    _t['im_detect'].tic()
+    cfg.timer.tic()
     blobs_out = net.forward(**forward_kwargs)
+    _t['im_detect'].toc()
+    if cfg.BEGIN:
+        cfg.total+=_t['im_detect'].diff
+
 
     if cfg.TEST.HAS_RPN:
         assert len(im_scales) == 1, "Only single-image batch implemented"
@@ -167,10 +181,17 @@ def im_detect(net, im, boxes=None):
         # use softmax estimated probabilities
         scores = blobs_out['cls_prob']
 
+    #log("scores:{}\n{}".format(blobs_out['cls_prob'].shape, blobs_out['cls_prob']), filename="process.txt")
+    #log("rois:{}\n{}".format(rois.shape, rois), filename="process.txt")
+    #log("boxes:-im_scales:{}-{}\n{}".format(im_scales[0],boxes.shape, boxes), filename="process.txt")
+
     if cfg.TEST.BBOX_REG:
         # Apply bounding-box regression deltas
         box_deltas = blobs_out['bbox_pred']
         pred_boxes = bbox_transform_inv(boxes, box_deltas)
+
+        #log("pred_boxes_org:{}\n{}".format(pred_boxes.shape, pred_boxes), filename="process.txt")
+
         pred_boxes = clip_boxes(pred_boxes, im.shape)
     else:
         # Simply repeat the boxes, once for each class
@@ -180,6 +201,8 @@ def im_detect(net, im, boxes=None):
         # Map scores and predictions back to the original set of boxes
         scores = scores[inv_index, :]
         pred_boxes = pred_boxes[inv_index, :]
+
+    #log("pred_boxes:{}\n{}".format(pred_boxes.shape, pred_boxes), filename="process.txt")
 
     return scores, pred_boxes
 

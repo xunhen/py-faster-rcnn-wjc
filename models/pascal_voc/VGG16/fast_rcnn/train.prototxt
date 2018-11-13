@@ -483,6 +483,8 @@ layer {
     }
   }
 }
+
+####论文中说背景忽略，但在代码中没体现？？？
 layer {
   name: "loss_cls"
   type: "SoftmaxWithLoss"

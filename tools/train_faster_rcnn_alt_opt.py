@@ -307,7 +307,7 @@ if __name__ == '__main__':
     p.join()
 
     print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
-    print 'Stage 2 Fast R-CNN, init from stage 2 RPN R-CNN model'
+    print 'Stage 2 Fast R-CNN, init from stage 2 RPN R-CNN model'  #和init from stage 1 Fast R-CNN model'是一样的，但这样要改一下dummy部分
     print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
 
     cfg.TRAIN.SNAPSHOT_INFIX = 'stage2'

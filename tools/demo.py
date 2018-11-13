@@ -9,7 +9,6 @@
 
 """
 Demo script showing detections in sample images.
-
 See README.md for installation instructions before running.
 """
 
@@ -23,6 +22,7 @@ import numpy as np
 import scipy.io as sio
 import caffe, os, sys, cv2
 import argparse
+from fast_rcnn.Background import Background
 
 CLASSES = ('__background__',
            'aeroplane', 'bicycle', 'bird', 'boat',
@@ -40,7 +40,7 @@ NETS = {'vgg16': ('VGG16',
 def vis_detections(im, class_name, dets, thresh=0.5):
     """Draw detected bounding boxes."""
     inds = np.where(dets[:, -1] >= thresh)[0]
-    if len(inds) == 0:
+    if len(inds) == 0 or class_name != 'car':
         return
 
     im = im[:, :, (2, 1, 0)]
@@ -85,7 +85,7 @@ def demo(net, image_name):
            '{:d} object proposals').format(timer.total_time, boxes.shape[0])
 
     # Visualize detections for each class
-    CONF_THRESH = 0.8
+    CONF_THRESH = 0.3
     NMS_THRESH = 0.3
     for cls_ind, cls in enumerate(CLASSES[1:]):
         cls_ind += 1 # because we skipped background
@@ -112,7 +112,7 @@ def parse_args():
 
     return args
 
-if __name__ == '__main__':
+if __name__ == '__main1__':
     cfg.TEST.HAS_RPN = True  # Use RPN for proposals
 
     args = parse_args()
@@ -125,7 +125,6 @@ if __name__ == '__main__':
     if not os.path.isfile(caffemodel):
         raise IOError(('{:s} not found.\nDid you run ./data/script/'
                        'fetch_faster_rcnn_models.sh?').format(caffemodel))
-
     if args.cpu_mode:
         caffe.set_mode_cpu()
     else:
@@ -141,11 +140,67 @@ if __name__ == '__main__':
     for i in xrange(2):
         _, _= im_detect(net, im)
 
+    cfg.BEGIN=True
     im_names = ['000456.jpg', '000542.jpg', '001150.jpg',
                 '001763.jpg', '004545.jpg']
     for im_name in im_names:
         print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
         print 'Demo for data/demo/{}'.format(im_name)
         demo(net, im_name)
+    for im_name in im_names:
+        print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+        print 'Demo for data/demo/{}'.format(im_name)
+        demo(net, im_name)
+    #plt.show()
 
+    cfg.total=cfg.total/10*1000
+    for key in cfg.time_ave:
+        cfg.time_ave[key]/=10
+    for key in cfg.time_ave:
+        print(key,'{:.8f}ms'.format(cfg.time_ave[key]),'{:.8f}%'.format( cfg.time_ave[key]/cfg.total*100))
+
+    for key in cfg.proposal_time:
+        cfg.proposal_time[key]=cfg.proposal_time[key]/10*1000
+        print("{} in proposal:{:.8f}%".format(key,cfg.proposal_time[key]/cfg.time_ave['4_after_proposal']*100))
+    print('total {:.8f}ms'.format(cfg.total))
+    print('total {:.8f}ms for proposal'.format(cfg.proposal_total/10*1000))
+
+if __name__ == '__main__':
+    cfg.TEST.HAS_RPN = True  # Use RPN for proposals
+
+    args = parse_args()
+
+    prototxt = os.path.join(cfg.MODELS_DIR, NETS[args.demo_net][0],
+                            'faster_rcnn_alt_opt', 'faster_rcnn_test.pt')
+    caffemodel = os.path.join(cfg.DATA_DIR, 'faster_rcnn_models',
+                              NETS[args.demo_net][1])
+
+    if not os.path.isfile(caffemodel):
+        raise IOError(('{:s} not found.\nDid you run ./data/script/'
+                       'fetch_faster_rcnn_models.sh?').format(caffemodel))
+    if args.cpu_mode:
+        caffe.set_mode_cpu()
+    else:
+        caffe.set_mode_gpu()
+        caffe.set_device(args.gpu_id)
+        cfg.GPU_ID = args.gpu_id
+    net = caffe.Net(prototxt, caffemodel, caffe.TEST)
+
+    print '\n\nLoaded network {:s}'.format(caffemodel)
+
+    # Warmup on a dummy image
+    im = 128 * np.ones((300, 500, 3), dtype=np.uint8)
+    for i in xrange(2):
+        _, _ = im_detect(net, im)
+
+    cfg.BEGIN = True
+    path='F:/PostGraduate/Projects/background/video/post/{}.jpg'
+    path2='F:/PostGraduate/Projects/background/video/pre/{}.jpg'
+    #im_names = ['F:/PostGraduate/Projects/background/video/post/11.jpg','F:/PostGraduate/Projects/background/video/post/11.jpg']
+    for im_name1 in range(10,20):
+        im_name=path.format(im_name1)
+        cfg.background = Background(path2.format(im_name1),0.7)
+        print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+        print 'Demo for data/demo/{}'.format(im_name)
+        demo(net, im_name)
     plt.show()

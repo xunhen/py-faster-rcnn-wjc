@@ -13,6 +13,7 @@ class Timer(object):
         self.total_time = 0.
         self.calls = 0
         self.start_time = 0.
+        self.end_time=0
         self.diff = 0.
         self.average_time = 0.
 
@@ -22,7 +23,8 @@ class Timer(object):
         self.start_time = time.time()
 
     def toc(self, average=True):
-        self.diff = time.time() - self.start_time
+        self.end_time=time.time()
+        self.diff = self.end_time - self.start_time
         self.total_time += self.diff
         self.calls += 1
         self.average_time = self.total_time / self.calls

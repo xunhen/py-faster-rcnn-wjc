@@ -12,6 +12,8 @@ from fast_rcnn.config import cfg
 from generate_anchors import generate_anchors
 from fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes
 from fast_rcnn.nms_wrapper import nms
+from utils.log import log
+from utils.timer import Timer
 
 DEBUG = False
 
@@ -23,7 +25,7 @@ class ProposalLayer(caffe.Layer):
 
     def setup(self, bottom, top):
         # parse the layer parameter string, which must be valid YAML
-        layer_params = yaml.load(self.param_str_)
+        layer_params = yaml.load(self.param_str)
 
         self._feat_stride = layer_params['feat_stride']
         anchor_scales = layer_params.get('scales', (8, 16, 32))
@@ -58,10 +60,15 @@ class ProposalLayer(caffe.Layer):
         # take after_nms_topN proposals after NMS
         # return the top proposals (-> RoIs top, scores top)
 
+        timer = Timer();
+        timer_t=Timer();
+        timer_t.tic();
+        if cfg.BEGIN:
+            timer.tic()
         assert bottom[0].data.shape[0] == 1, \
             'Only single item batches are supported'
 
-        cfg_key = str(self.phase) # either 'TRAIN' or 'TEST'
+        cfg_key = str('TRAIN' if self.phase == 0 else 'TEST') # either 'TRAIN' or 'TEST'
         pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
         post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N
         nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH
@@ -82,13 +89,20 @@ class ProposalLayer(caffe.Layer):
 
         if DEBUG:
             print 'score map size: {}'.format(scores.shape)
-
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('other0', 0)
+            cfg.proposal_time['other0']=last+timer.diff
+            timer.tic()
         # Enumerate all shifts
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
         shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
                             shift_x.ravel(), shift_y.ravel())).transpose()
+
+        log("base_anchors:\n{}\n"
+            .format(self._anchors), filename="proposal.txt")
 
         # Enumerate all shifted anchors:
         #
@@ -101,7 +115,11 @@ class ProposalLayer(caffe.Layer):
         anchors = self._anchors.reshape((1, A, 4)) + \
                   shifts.reshape((1, K, 4)).transpose((1, 0, 2))
         anchors = anchors.reshape((K * A, 4))
-
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('anchors', 0)
+            cfg.proposal_time['anchors']=last+timer.diff
+            timer.tic()
         # Transpose and reshape predicted bbox transformations to get them
         # into the same order as the anchors:
         #
@@ -117,22 +135,45 @@ class ProposalLayer(caffe.Layer):
         # transpose to (1, H, W, A)
         # reshape to (1 * H * W * A, 1) where rows are ordered by (h, w, a)
         scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))
-
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('process', 0)
+            cfg.proposal_time['process']=last+timer.diff
+            timer.tic()
         # Convert anchors into proposals via bbox transformations
         proposals = bbox_transform_inv(anchors, bbox_deltas)
-
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('convert_anchors', 0)
+            cfg.proposal_time['convert_anchors']=last+timer.diff
+            timer.tic()
         # 2. clip predicted boxes to image
         proposals = clip_boxes(proposals, im_info[:2])
-
         # 3. remove predicted boxes with either height or width < threshold
         # (NOTE: convert min_size to input image scale stored in im_info[2])
         keep = _filter_boxes(proposals, min_size * im_info[2])
+
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('filter_', 0)
+            cfg.proposal_time['filter_'] = last + timer.diff
+            timer.tic()
         proposals = proposals[keep, :]
         scores = scores[keep]
 
         # 4. sort all (proposal, score) pairs by score from highest to lowest
         # 5. take top pre_nms_topN (e.g. 6000)
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('other1', 0)
+            cfg.proposal_time['other1'] = last + timer.diff
+            timer.tic()
         order = scores.ravel().argsort()[::-1]
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('sort', 0)
+            cfg.proposal_time['sort']=last+timer.diff
+            timer.tic()
         if pre_nms_topN > 0:
             order = order[:pre_nms_topN]
         proposals = proposals[order, :]
@@ -141,11 +182,28 @@ class ProposalLayer(caffe.Layer):
         # 6. apply nms (e.g. threshold = 0.7)
         # 7. take after_nms_topN (e.g. 300)
         # 8. return the top proposals (-> RoIs top)
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('pre_nms', 0)
+            cfg.proposal_time['pre_nms'] = last + timer.diff
+            timer.tic()
         keep = nms(np.hstack((proposals, scores)), nms_thresh)
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('nms', 0)
+            cfg.proposal_time['nms']=last+timer.diff
+            timer.tic()
+
         if post_nms_topN > 0:
             keep = keep[:post_nms_topN]
         proposals = proposals[keep, :]
         scores = scores[keep]
+
+        # wjc
+        if cfg.BEGIN and cfg.BACKGROUND:
+            keep = cfg.background.filter(proposals)
+            proposals = proposals[keep, :]
+            scores = scores[keep]
 
         # Output rois blob
         # Our RPN implementation only supports a single input image, so all
@@ -159,6 +217,14 @@ class ProposalLayer(caffe.Layer):
         if len(top) > 1:
             top[1].reshape(*(scores.shape))
             top[1].data[...] = scores
+
+        timer_t.toc()
+        if cfg.BEGIN:
+            timer.toc()
+            last = cfg.proposal_time.get('post_nms', 0)
+            cfg.proposal_time['post_nms'] = last + timer.diff
+            timer.tic()
+            cfg.proposal_total+=timer_t.diff
 
     def backward(self, top, propagate_down, bottom):
         """This layer does not propagate gradients."""

@@ -422,13 +422,13 @@ layer {
    top: "rpn_cls_score_reshape"
    name: "rpn_cls_score_reshape"
    type: "Reshape"
-   reshape_param { shape { dim: 0 dim: 2 dim: -1 dim: 0 } }
+   reshape_param { shape { dim: 0 dim: 2 dim: -1 dim: 0 } }       #原来为d*h*w转为2*(h*9)*w
 }
 
 layer {
   name: 'rpn-data'
   type: 'Python'
-  bottom: 'rpn_cls_score'
+  bottom: 'rpn_cls_score'   #就是用来记录此时的宽高，据此产生anchor
   bottom: 'gt_boxes'
   bottom: 'im_info'
   bottom: 'data'
